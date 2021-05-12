@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-require('dotenv').config()
+require('dotenv').config();
 const { pull } = require('./scripts/pull');
 const parseArgs = require('minimist');
 

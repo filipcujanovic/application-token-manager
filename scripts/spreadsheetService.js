@@ -6,77 +6,86 @@ const { columnToLetter } = require('./utils');
 
 const getDataFromSpreadSheet = async (includeAdditionalInfo = false) => {
     const auth = await authorize(),
-        sheetsAPI = google.sheets({version: 'v4', auth}),
-        resultSpreadsheet = await sheetsAPI.spreadsheets.get({
-            spreadsheetId: process.env.SPREADSHEET_ID,
-            includeGridData: true
-        });
-    let tokenVariants = {},
-        jsonSheetData = {},
-        { sheets } = resultSpreadsheet.data,
-        existingSheets = [];
-    for (const sheet of sheets) {
-        let { title } = sheet.properties;
-        if (includeAdditionalInfo) {
-            jsonSheetData[title] = {
-                token_keys: {},
-                token_variants: {},
-            };
-        }
-        existingSheets[title] = {numberOfTokenVariants: 2};
-        const sheetResult = await sheetsAPI.spreadsheets.values.get({
-                spreadsheetId: process.env.SPREADSHEET_ID,
-                range: title,
-                majorDimension: 'ROWS',
-                valueRenderOption: 'FORMATTED_VALUE'
-            }),
-            rows = sheetResult.data.values;
-        if (typeof rows !==  'undefined') {
-            let rowData,
-                rowSize;
-            rows.map((row, index) => {
-                if (index === HEADER_ROW) {
-                    rowSize = row.length;
-                    row.map((rowValue, rowIndex) => {
-                        // Looking only for token variants columns in order to create filenames
-                        if (rowIndex >= TOKEN_VALUE_COLUMN) {
-                            existingSheets[title].numberOfTokenVariants++;
-                            let sheetTitle = title.split('.')[0];
-                            tokenVariants[rowIndex] = `${sheetTitle}.${rowValue}.json`;
-                            if (includeAdditionalInfo) {
-                                jsonSheetData[title].token_variants[rowValue] = rowIndex + 1;
-                            }
-                        }
-                    });
-                } else {
-                    if (row.length < rowSize) {
-                        row = [...row, ...Array(rowSize).fill('')];
-                    }
-                    row.map((rowValue, rowIndex) => {
-                        if (typeof tokenVariants[rowIndex] !== 'undefined') {
-                            if (!jsonSheetData.hasOwnProperty(tokenVariants[rowIndex])) {
-                                jsonSheetData[tokenVariants[rowIndex]] = {};
-                            }
-                            rowData = rowValue;
-                            if (includeAdditionalInfo) {
-                                rowData = {rowValue, cellInfo: `${columnToLetter(rowIndex + 1)}${index + 1}`};
-                            }
-                            jsonSheetData[tokenVariants[rowIndex]][row[TOKEN_KEY]] = rowData;
-                        }
-                    });
-                    if (includeAdditionalInfo) {
-                        jsonSheetData[title].token_keys[row[TOKEN_KEY]] = index + 1;
-                    }
-                }
-                if (includeAdditionalInfo) {
-                    jsonSheetData[title].lastRow = index + 1;
-                    jsonSheetData[title].sheetId = sheet.properties.sheetId;
-                }
-            });
-        }
-    }
+        sheetsAPI = google.sheets({version: 'v4', auth});
 
-    return { jsonSheetData, existingSheets };
+    try {
+            resultSpreadsheet = await sheetsAPI.spreadsheets.get({
+                spreadsheetId: process.env.SPREADSHEET_ID,
+                includeGridData: true
+            });
+        let tokenVariants = {},
+            jsonSheetData = {},
+            { sheets } = resultSpreadsheet.data,
+            existingSheets = [];
+        for (const sheet of sheets) {
+            let { title } = sheet.properties;
+            if (includeAdditionalInfo) {
+                jsonSheetData[title] = {
+                    token_keys: {},
+                    token_variants: {},
+                };
+            }
+            existingSheets[title] = {numberOfTokenVariants: 2};
+            try {
+                const sheetResult = await sheetsAPI.spreadsheets.values.get({
+                        spreadsheetId: process.env.SPREADSHEET_ID,
+                        range: title,
+                        majorDimension: 'ROWS',
+                        valueRenderOption: 'FORMATTED_VALUE'
+                    }),
+                    rows = sheetResult.data.values;
+                if (typeof rows !==  'undefined') {
+                    let rowData,
+                        rowSize;
+                    rows.map((row, index) => {
+                        if (index === HEADER_ROW) {
+                            rowSize = row.length;
+                            row.map((rowValue, rowIndex) => {
+                                // Looking only for token variants columns in order to create filenames
+                                if (rowIndex >= TOKEN_VALUE_COLUMN) {
+                                    existingSheets[title].numberOfTokenVariants++;
+                                    let sheetTitle = title.split('.')[0];
+                                    tokenVariants[rowIndex] = `${sheetTitle}.${rowValue}.json`;
+                                    if (includeAdditionalInfo) {
+                                        jsonSheetData[title].token_variants[rowValue] = rowIndex + 1;
+                                    }
+                                }
+                            });
+                        } else {
+                            if (row.length < rowSize) {
+                                row = [...row, ...Array(rowSize).fill('')];
+                            }
+                            row.map((rowValue, rowIndex) => {
+                                if (typeof tokenVariants[rowIndex] !== 'undefined') {
+                                    if (!jsonSheetData.hasOwnProperty(tokenVariants[rowIndex])) {
+                                        jsonSheetData[tokenVariants[rowIndex]] = {};
+                                    }
+                                    rowData = rowValue;
+                                    if (includeAdditionalInfo) {
+                                        rowData = {rowValue, cellInfo: `${columnToLetter(rowIndex + 1)}${index + 1}`};
+                                    }
+                                    jsonSheetData[tokenVariants[rowIndex]][row[TOKEN_KEY]] = rowData;
+                                }
+                            });
+                            if (includeAdditionalInfo) {
+                                jsonSheetData[title].token_keys[row[TOKEN_KEY]] = index + 1;
+                            }
+                        }
+                        if (includeAdditionalInfo) {
+                            jsonSheetData[title].lastRow = index + 1;
+                            jsonSheetData[title].sheetId = sheet.properties.sheetId;
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error('There was an error while pulling sheet values', err);
+            }
+        }
+
+        return { jsonSheetData, existingSheets };
+    } catch (err) {
+        console.error('There was an error while pulling data from spreadsheet', err);
+    }
 }
 
 const addDataToSpreadSheet = async (jsonDataToPush, existingSheets) => {
@@ -113,7 +122,7 @@ const updateSheetRanges = async (data) => {
             }
         });
     } catch (err) {
-        console.error(err);
+        console.error('There was an error while updating sheet ranges', data, err);
     }
 }
 
@@ -127,7 +136,7 @@ const clearSheetRanges = async (data) => {
                 ranges: data
             });
         } catch (err) {
-            console.error(err);
+            console.error('There was an error while clearing sheet ranges', data, err);
         }
     }
 }
@@ -145,7 +154,7 @@ const runSpreadsheetBatchUpdate = async (data) => {
                 }
             });
         } catch (err) {
-            console.error(err);
+            console.error('There was an error while running batch update for spredsheet', data, err);
         }
     }
 }
@@ -174,7 +183,7 @@ const createNewSheet = async (sheetName) => {
         // Adding protected ranges for the sheet
         addProtectedRangeToSheet(response.data.replies[0].addSheet.properties.sheetId);
     } catch (err) {
-        console.error(err);
+        console.error('There was an error while creating new sheet', sheetName, err);
     }
 }
 
@@ -212,7 +221,7 @@ const addProtectedRangeToSheet = async (sheetId) => {
             }
         });
     } catch (err) {
-        console.error(err);
+        console.error('There was an error while adding protected range to sheet', sheetId, err);
     }
 }
 

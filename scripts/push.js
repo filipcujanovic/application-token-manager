@@ -35,7 +35,7 @@ const pushDataToGoogleSheet = async (argv) => {
             try {
                 jsonDataToPush = getUpdatedData(argv, file , jsonDataToPush, existingSheets, jsonSheetData);
             } catch (err) {
-                console.error(err);
+                console.error('There was an error while pushing data', err);
             }
         }
 
@@ -127,12 +127,11 @@ const getModifyReplaceData = (replaceData, jsonSheetData, jsonFileData, file, sh
     return replaceData;
 }
 
-
 // Get data for new tokens
 const getNewTokensData = (newTokenData, jsonSheetData, jsonFileData, file, sheetName, existingSheets) => {
     let tokenVariantName = file.split('.')[1];
     for (const [token, tokenValue] of Object.entries(jsonFileData)) {
-        if ((typeof jsonSheetData[file] !== 'undefined' && !jsonSheetData[file].hasOwnProperty(token)) || typeof jsonSheetData[file] === 'undefined' && token.match(TOKEN_KEY_REGEX) !== null) {
+        if (((typeof jsonSheetData[file] !== 'undefined' && !jsonSheetData[file].hasOwnProperty(token)) || typeof jsonSheetData[file] === 'undefined') && token.match(TOKEN_KEY_REGEX) !== null) {
             // token variant doesn't exits
             if (!jsonSheetData.hasOwnProperty(file)) {
                 //check if token exits 
@@ -158,20 +157,11 @@ const getNewTokensData = (newTokenData, jsonSheetData, jsonFileData, file, sheet
                     newTokenData.dataForMaping[sheetName].data[token] = [];
                 }
                 newTokenData.dataForMaping[sheetName].data[token].push({
-                    variant: jsonSheetData[sheetName].token_variants[tokenVariantName] + 1,
+                    variant: jsonSheetData[sheetName].token_variants[tokenVariantName],
                     value: tokenValue
                 });
             }
 
-        //Proveri da li treba ovo
-        } else if (jsonSheetData[file].hasOwnProperty(token) && jsonSheetData[file][token].rowValue === '') {
-            newTokenData.apiData.push({
-                majorDimension: 'ROWS',
-                range: jsonSheetData[file][token].cellInfo,
-                values: [
-                    [tokenValue]
-                ]
-            });
         }
     }
 
@@ -180,7 +170,7 @@ const getNewTokensData = (newTokenData, jsonSheetData, jsonFileData, file, sheet
 }
 
 const getMaxTokenVariantColumnIndex = (data, append) => {
-    let max = 0;
+    let max = 3;
     for (const [variant, columnIndex] of Object.entries(data)) {
         if (columnIndex > max) {
             max = columnIndex;
@@ -199,7 +189,7 @@ const mapDataAndUpdate = async (argv, jsonDataToPush, existingSheets, jsonSheetD
         await clearSheetRanges(jsonDataToPush.tokenCleanupData);
     }
     if (argv['cleanup-set']) {
-        await clearSetData(jsonDataToPush.setCleanupData, jsonSheetData);
+        await clearSetData(jsonDataToPush.setCleanupData, jsonSheetData, existingSheets);
     }
 
     await updateNewTokens(jsonDataToPush.newTokenData, existingSheets, jsonSheetData);
@@ -228,7 +218,7 @@ const updateNewTokens = async (newTokenData, existingSheets, jsonSheetData) => {
     let tokenCounter = 1;
     for (const [sheetName, value] of Object.entries(newTokenData.dataForMaping)) {
         let sheetValues = [],
-            offset = 2;
+            offset = 3;
 
         Object.keys(value.data).map((tokenKey) => {
             let variablesSet = new Set(),
@@ -241,7 +231,7 @@ const updateNewTokens = async (newTokenData, existingSheets, jsonSheetData) => {
                         variablesSet.add(match);
                     });
                 }
-                tokenValues.push([tokenKey, [...variablesSet].join(','), ...Array(tokenObject.variant - (existingSheets[sheetName].numberOfTokenVariants - (index + offset))).fill(null), tokenObject.value]);
+                tokenValues.push([tokenKey, [...variablesSet].join(','), ...Array(tokenObject.variant - offset).fill(null), tokenObject.value]);
             });
 
             if (tokenValues.length !== 0) {
@@ -274,9 +264,10 @@ const updateNewTokens = async (newTokenData, existingSheets, jsonSheetData) => {
     await addDataToSpreadSheet(newTokenData.dataForMaping, existingSheets);
 }
 
-const clearSetData = async (setCleanupData, jsonSheetData) => {
+const clearSetData = async (setCleanupData, jsonSheetData, existingSheets) => {
     let dataForClearing = [],
         sheetsForDeleting = [],
+        sheetNamesForDeleting = [],
         rangesForClearing = setCleanupData.map((setToCleanUp) => {
             dataForClearing.push(setToCleanUp);
             if (jsonSheetData.hasOwnProperty(setToCleanUp) && jsonSheetData[setToCleanUp].hasOwnProperty('sheetId')) {
@@ -285,20 +276,26 @@ const clearSetData = async (setCleanupData, jsonSheetData) => {
                         sheetId: jsonSheetData[setToCleanUp].sheetId
                     }
                 });
+                sheetNamesForDeleting.push(setToCleanUp);
             } else {
                 let splitData = setToCleanUp.split('.'),
                     sheetName = `${splitData[0]}.json`,
-                    variantName = splitData[1];
+                    variantName = splitData[1],
+                    columnLetter = columnToLetter(jsonSheetData[sheetName].token_variants[variantName]);
 
-                if (jsonSheetData.hasOwnProperty(sheetName) && jsonSheetData[sheetName].token_variants.hasOwnProperty(variantName) && !dataForClearing.includes(sheetName)) {
-                    let columnLetter = columnToLetter(jsonSheetData[sheetName].token_variants[variantName]);
-                    return `${sheetName}!${columnLetter}:${columnLetter}`
+                return {
+                    sheetName,
+                    range: `${sheetName}!${columnLetter}:${columnLetter}`
                 }
             }
         }).filter(value => value !== undefined);
 
-
-    await clearSheetRanges(rangesForClearing);
+    if (Object.keys(existingSheets).length === sheetsForDeleting.length) {
+        sheetsForDeleting = [];
+    } else {
+        rangesForClearing = rangesForClearing.filter(value => !sheetNamesForDeleting.includes(value.sheetName));
+    }
+    await clearSheetRanges(rangesForClearing.map(value => value.range));
     await runSpreadsheetBatchUpdate(sheetsForDeleting);
 }
 

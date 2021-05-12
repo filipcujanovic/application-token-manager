@@ -24,7 +24,7 @@ const pullDataFromGoogleSheet = async (argv) => {
             fs.writeFileSync(`${dirPath}/${file}`, JSON.stringify(dataToWrite));
         }
     } catch (err) {
-        console.error('An error has occured')
+        console.error('An error has occured while pulling data', err);
     }
 }
 

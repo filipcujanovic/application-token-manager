@@ -15,6 +15,7 @@ const authorize = async () =>  {
     try {
         token = getTokenFromFile(oAuth2Client);
     } catch (e) {
+        console.log('Error while reading token from file. Trying to get new token');
         await obtainNewToken(oAuth2Client);
     }
 
@@ -31,7 +32,7 @@ const obtainNewToken = async (oAuth2Client) => {
     const authUrl = oAuth2Client.generateAuthUrl({
             access_type: 'offline',
             prompt: 'consent',
-            scope: process.env.SCOPES.split(' '),
+            scope: ['https://www.googleapis.com/auth/spreadsheets']
         });
 
     let server = http.createServer((request, response) => {
@@ -41,7 +42,8 @@ const obtainNewToken = async (oAuth2Client) => {
             getNewToken(oAuth2Client, code);
             httpTerminator.terminate();
         }
-        response.write('Please close this window in order for the script to continue it\'s work.');
+        response.write('<h1>If your browser was open before running the script then please run the script again.</h1>');
+        response.write('<h1>If this is the only instance of the browser with only one tab active, just close it. No need to run the script again.</h1>');
         response.end();
 
     });
@@ -58,14 +60,12 @@ const getNewToken = (oAuth2Client, code) => {
 }
 
 const getTokenFromFile = () => {
-    // let token = fs.readFileSync(process.env.TOKEN_PATH);
-    let token = fs.readFileSync('secrets/token.json');
+    let token = fs.readFileSync(process.env.TOKEN_PATH);
     return JSON.parse(token);
 }
 
 const getCredentials = () => {
-    // let result = fs.readFileSync(process.env.CREDENTIALS_PATH);
-    let result = fs.readFileSync('secrets/credentials.json');
+    let result = fs.readFileSync(process.env.CREDENTIALS_PATH);
     return JSON.parse(result).web;
 }
 
